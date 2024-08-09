@@ -260,12 +260,36 @@ pub const NodeJSFS = struct {
 };
 
 pub fn createBinding(globalObject: *JSC.JSGlobalObject) JSC.JSValue {
-    var module = globalObject.allocator().create(NodeJSFS) catch bun.outOfMemory();
-    module.* = .{};
+    const module = NodeJSFS.new(.{});
 
     const vm = globalObject.bunVM();
     if (vm.standalone_module_graph != null)
         module.node_fs.vm = vm;
 
     return module.toJS(globalObject);
+}
+
+pub fn createMemfdForTesting(globalObject: *JSC.JSGlobalObject, callFrame: *JSC.CallFrame) JSC.JSValue {
+    const arguments = callFrame.arguments(1);
+
+    if (arguments.len < 1) {
+        return .undefined;
+    }
+
+    if (comptime !bun.Environment.isLinux) {
+        globalObject.throw("memfd_create is not implemented on this platform", .{});
+        return .zero;
+    }
+
+    const size = arguments.ptr[0].toInt64();
+    switch (bun.sys.memfd_create("my_memfd", std.os.linux.MFD.CLOEXEC)) {
+        .result => |fd| {
+            _ = bun.sys.ftruncate(fd, size);
+            return JSC.JSValue.jsNumber(fd.cast());
+        },
+        .err => |err| {
+            globalObject.throwValue(err.toJSC(globalObject));
+            return .zero;
+        },
+    }
 }

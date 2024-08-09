@@ -40,8 +40,6 @@ const picohttp = bun.picohttp;
 pub const TextEncoder = struct {
     filler: u32 = 0,
 
-    const utf8_string: string = "utf-8";
-
     pub export fn TextEncoder__encode8(
         globalThis: *JSGlobalObject,
         ptr: [*]const u8,
@@ -198,7 +196,7 @@ pub const TextEncoder = struct {
         array.ensureStillAlive();
 
         if (encoder.any_non_ascii) {
-            return JSC.JSValue.jsUndefined();
+            return .undefined;
         }
 
         if (array.isEmpty()) {
@@ -451,7 +449,6 @@ pub const TextDecoder = struct {
         return JSC.JSValue.jsBoolean(this.fatal);
     }
 
-    const utf8_string: string = "utf-8";
     pub fn getEncoding(
         this: *TextDecoder,
         globalThis: *JSC.JSGlobalObject,
@@ -652,8 +649,7 @@ pub const TextDecoder = struct {
                     } else |err| {
                         switch (err) {
                             error.InvalidByteSequence => {
-                                const type_error = globalThis.createErrorInstanceWithCode(.ERR_ENCODING_INVALID_ENCODED_DATA, "Invalid byte sequence", .{});
-                                globalThis.throwValue(type_error);
+                                globalThis.ERR_ENCODING_INVALID_ENCODED_DATA("Invalid byte sequence", .{}).throw();
                                 return .zero;
                             },
                             error.OutOfMemory => {
@@ -893,8 +889,11 @@ pub const Encoder = struct {
                     return bun.String.createExternalGloballyAllocated(.latin1, input);
                 }
 
-                defer bun.default_allocator.free(input);
                 const str, const chars = bun.String.createUninitialized(.latin1, input.len);
+                defer bun.default_allocator.free(input);
+                if (str.tag == .Dead) {
+                    return str;
+                }
                 strings.copyLatin1IntoASCII(chars, input);
                 return str;
             },
@@ -902,7 +901,11 @@ pub const Encoder = struct {
                 return bun.String.createExternalGloballyAllocated(.latin1, input);
             },
             .buffer, .utf8 => {
-                const converted = strings.toUTF16Alloc(bun.default_allocator, input, false, false) catch return bun.String.dead;
+                const converted = strings.toUTF16Alloc(bun.default_allocator, input, false, false) catch {
+                    bun.default_allocator.free(input);
+                    return bun.String.dead;
+                };
+
                 if (converted) |utf16| {
                     defer bun.default_allocator.free(input);
                     return bun.String.createExternalGloballyAllocated(.utf16, utf16);
@@ -919,13 +922,16 @@ pub const Encoder = struct {
                 }
 
                 const as_u16 = std.mem.bytesAsSlice(u16, input);
-
                 return bun.String.createExternalGloballyAllocated(.utf16, @alignCast(as_u16));
             },
 
             .hex => {
                 defer bun.default_allocator.free(input);
                 const str, const chars = bun.String.createUninitialized(.latin1, input.len * 2);
+
+                if (str.tag == .Dead) {
+                    return str;
+                }
 
                 const wrote = strings.encodeBytesToHex(chars, input);
 
@@ -944,14 +950,16 @@ pub const Encoder = struct {
             .base64url => {
                 defer bun.default_allocator.free(input);
                 const out, const chars = bun.String.createUninitialized(.latin1, bun.base64.urlSafeEncodeLen(input));
-                _ = bun.base64.encodeURLSafe(chars, input);
+                if (out.tag != .Dead) {
+                    _ = bun.base64.encodeURLSafe(chars, input);
+                }
                 return out;
             },
 
             .base64 => {
                 defer bun.default_allocator.free(input);
                 const to_len = bun.base64.encodeLen(input);
-                var to = bun.default_allocator.alloc(u8, to_len) catch return bun.String.dead;
+                const to = bun.default_allocator.alloc(u8, to_len) catch return bun.String.dead;
                 const wrote = bun.base64.encode(to, input);
                 return bun.String.createExternalGloballyAllocated(.latin1, to[0..wrote]);
             },

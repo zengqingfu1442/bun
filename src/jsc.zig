@@ -52,6 +52,7 @@ pub const API = struct {
     pub const BrotliEncoder = @import("./bun.js/api/js_brotli.zig").BrotliEncoder;
     pub const BrotliDecoder = @import("./bun.js/api/js_brotli.zig").BrotliDecoder;
 };
+pub const Postgres = @import("./sql/postgres.zig");
 pub const DNS = @import("./bun.js/api/bun/dns_resolver.zig");
 pub const FFI = @import("./bun.js/api/ffi.zig").FFI;
 pub const Node = struct {
@@ -111,3 +112,5 @@ pub const conv = if (bun.Environment.isWindows and bun.Environment.isX64)
     std.builtin.CallingConvention.SysV
 else
     std.builtin.CallingConvention.C;
+
+pub const Error = @import("ErrorCode").Error;
