@@ -496,11 +496,18 @@ impl Entry {
         };
 
         if self.metadata.sourcemap_byte_length > 0 {
-            self.sourcemap = pread_box(
+            let sourcemap = pread_box(
                 file,
                 self.metadata.sourcemap_byte_length as usize,
                 self.metadata.sourcemap_byte_offset,
             )?;
+
+            // `InternalSourceMap::find` trusts these header offsets.
+            if !bun_sourcemap::InternalSourceMap::is_valid_blob(&sourcemap) {
+                return Err(crate::CrateError::InvalidSourceMap);
+            }
+
+            self.sourcemap = sourcemap;
         }
 
         if self.metadata.esm_record_byte_length > 0 {
